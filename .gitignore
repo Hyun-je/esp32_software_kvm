@@ -1,0 +1,19 @@
+PLAN.md
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+
+# PlatformIO
+esp32/.pio/
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
