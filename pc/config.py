@@ -14,3 +14,9 @@ PASSTHROUGH = True
 # ESP32-C3 USB VID/PID for auto-detection
 ESP32_VID = 0x303A  # Espressif Systems
 ESP32_PIDS = (0x1001, 0x0002)  # ESP32-C3 USB CDC PIDs
+
+# Hotkey to toggle ESP32 forwarding on/off.
+# Values are HID modifier bitmask and HID keycode.
+# Default: Ctrl+Alt+K  (MOD_LEFT_CTRL=0x01 | MOD_LEFT_ALT=0x04 => 0x05, K=0x0E)
+TOGGLE_MOD: int = 0x05   # Left Ctrl + Left Alt
+TOGGLE_KEY: int = 0x0E   # K

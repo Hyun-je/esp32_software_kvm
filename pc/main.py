@@ -94,10 +94,24 @@ def main() -> None:
     passthrough = not args.no_passthrough
 
     # ------------------------------------------------------------------
+    # Forwarding toggle state (Ctrl+Alt+K to switch on/off)
+    # ------------------------------------------------------------------
+    _forwarding = [True]  # list so inner functions can mutate it
+    _pressed_keys: set[int] = set()  # keycodes sent as KEY_DOWN but not yet KEY_UP'd
+
+    # ------------------------------------------------------------------
     # Keyboard hook callbacks
     # ------------------------------------------------------------------
     def on_press(modifier: int, keycode: int) -> None:
         if keycode == 0 and modifier == 0:
+            return
+        # Toggle forwarding when the hotkey is pressed
+        if modifier == cfg.TOGGLE_MOD and keycode == cfg.TOGGLE_KEY:
+            _forwarding[0] = not _forwarding[0]
+            state = "ON" if _forwarding[0] else "OFF"
+            log.info("Forwarding %s (Ctrl+Alt+K)", state)
+            return
+        if not _forwarding[0]:
             return
         # Remap CapsLock → Ctrl+Space so iPhone toggles Korean/English input
         if keycode == _CAPS_LOCK_HID and modifier == 0:
@@ -107,11 +121,25 @@ def main() -> None:
             return
         log.debug("KEY_DOWN mod=0x%02X keycode=0x%02X", modifier, keycode)
         sent = sender.send_key_event(pkt.KEY_DOWN, modifier, keycode)
+        if sent and keycode:
+            _pressed_keys.add(keycode)
         if not sent:
             log.warning("Packet dropped — not connected")
 
     def on_release(modifier: int, keycode: int) -> None:
         if keycode == 0 and modifier == 0:
+            return
+        # Toggle hotkey release is always suppressed
+        if modifier == cfg.TOGGLE_MOD and keycode == cfg.TOGGLE_KEY:
+            return
+        # If KEY_DOWN was sent for this key, always send KEY_UP regardless of
+        # forwarding state — prevents stuck keys when toggling OFF while holding keys
+        if keycode in _pressed_keys:
+            _pressed_keys.discard(keycode)
+            log.debug("KEY_UP   mod=0x%02X keycode=0x%02X", modifier, keycode)
+            sender.send_key_event(pkt.KEY_UP, modifier, keycode)
+            return
+        if not _forwarding[0]:
             return
         # CapsLock release is suppressed — already handled atomically on press
         if keycode == _CAPS_LOCK_HID and modifier == 0:
@@ -135,7 +163,7 @@ def main() -> None:
                 if sender._serial and sender._serial.is_open and sender._serial.in_waiting:
                     line = sender._serial.readline().decode("utf-8", errors="replace").rstrip()
                     if line:
-                        esp32_log.info(line)
+                        esp32_log.debug(line)
             except Exception:
                 pass
             time.sleep(0.01)
@@ -156,8 +184,8 @@ def main() -> None:
     # ------------------------------------------------------------------
     # Start hooking
     # ------------------------------------------------------------------
-    log.info("Keyboard hook active. passthrough=%s", "ON" if passthrough else "OFF")
-    log.info("Press Ctrl+C to stop.")
+    log.info("Keyboard hook active. passthrough=%s  forwarding=ON", "ON" if passthrough else "OFF")
+    log.info("Press Ctrl+Alt+K to toggle forwarding. Ctrl+C to stop.")
 
     hook.start(on_press, on_release)
 
