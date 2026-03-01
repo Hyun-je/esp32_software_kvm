@@ -15,6 +15,7 @@ import argparse
 import logging
 import signal
 import sys
+import threading
 import time
 
 import serial.tools.list_ports
@@ -22,6 +23,7 @@ import serial.tools.list_ports
 from protocol import packet as pkt
 from serial_sender.sender import SerialSender
 from hook.hid_keycodes import MOD_LEFT_CTRL
+from gui.status_window import StatusWindow
 import config as cfg
 
 log = logging.getLogger("kvm")
@@ -94,6 +96,14 @@ def main() -> None:
     passthrough = not args.no_passthrough
 
     # ------------------------------------------------------------------
+    # Status window
+    # ------------------------------------------------------------------
+    window = StatusWindow(on_close=lambda: _shutdown())
+    window.set_esp32(True)    # just connected
+    window.set_ble(False)     # unknown until ESP32 reports
+    window.set_forwarding(True)
+
+    # ------------------------------------------------------------------
     # Forwarding toggle state (Ctrl+Alt+K to switch on/off)
     # ------------------------------------------------------------------
     _forwarding = [True]  # list so inner functions can mutate it
@@ -110,6 +120,7 @@ def main() -> None:
             _forwarding[0] = not _forwarding[0]
             state = "ON" if _forwarding[0] else "OFF"
             log.info("Forwarding %s (Ctrl+Alt+K)", state)
+            window.set_forwarding(_forwarding[0])
             return
         if not _forwarding[0]:
             return
@@ -150,13 +161,26 @@ def main() -> None:
     hook = _get_hook()
 
     # ------------------------------------------------------------------
-    # Graceful shutdown on Ctrl+C / SIGTERM
+    # Graceful shutdown on Ctrl+C / SIGTERM / window close
     # ------------------------------------------------------------------
     stop_event = [False]
 
-    # Read and print ESP32 serial log output in background
-    import threading
+    def _shutdown(sig=None, frame=None) -> None:
+        if stop_event[0]:
+            return
+        stop_event[0] = True
+        hook.stop()
+        sender.disconnect()
+        window.close()
+        log.info("Stopped.")
+        sys.exit(0)
 
+    signal.signal(signal.SIGINT, _shutdown)
+    signal.signal(signal.SIGTERM, _shutdown)
+
+    # ------------------------------------------------------------------
+    # ESP32 serial log reader — also parses BLE connection status
+    # ------------------------------------------------------------------
     def _esp32_log_reader():
         while not stop_event[0]:
             try:
@@ -164,22 +188,24 @@ def main() -> None:
                     line = sender._serial.readline().decode("utf-8", errors="replace").rstrip()
                     if line:
                         esp32_log.debug(line)
+                        if "[KVM] BLE connected." in line:
+                            window.set_ble(True)
+                        elif "[KVM] BLE disconnected." in line:
+                            window.set_ble(False)
             except Exception:
                 pass
             time.sleep(0.01)
 
-    log_thread = threading.Thread(target=_esp32_log_reader, daemon=True, name="esp32-log")
-    log_thread.start()
+    threading.Thread(target=_esp32_log_reader, daemon=True, name="esp32-log").start()
 
-    def _shutdown(sig=None, frame=None) -> None:
-        stop_event[0] = True
-        hook.stop()
-        sender.disconnect()
-        log.info("Stopped.")
-        sys.exit(0)
+    # ------------------------------------------------------------------
+    # Periodic ESP32 serial connection poll (updates the ESP32 LED)
+    # ------------------------------------------------------------------
+    def _poll_esp32():
+        window.set_esp32(sender.is_connected)
+        window.after(500, _poll_esp32)
 
-    signal.signal(signal.SIGINT, _shutdown)
-    signal.signal(signal.SIGTERM, _shutdown)
+    window.after(500, _poll_esp32)
 
     # ------------------------------------------------------------------
     # Start hooking
@@ -189,9 +215,8 @@ def main() -> None:
 
     hook.start(on_press, on_release)
 
-    # Keep the main thread alive
-    while not stop_event[0]:
-        time.sleep(0.1)
+    # tkinter event loop — runs until the window is closed
+    window.run()
 
 
 if __name__ == "__main__":
