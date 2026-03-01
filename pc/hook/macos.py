@@ -7,7 +7,7 @@ Accessibility permission is required:
 
 from __future__ import annotations
 
-import sys
+import logging
 import threading
 from typing import Callable
 
@@ -16,18 +16,18 @@ from pynput import keyboard
 from .base import KeyboardHookBase
 from .hid_keycodes import char_to_hid, special_key_to_hid, macos_vk_to_hid, MODIFIER_KEY_MAP
 
+log = logging.getLogger(__name__)
+
 
 def _check_accessibility() -> None:
-    """Print a warning if accessibility permission is likely missing."""
+    """Log a warning if accessibility permission is likely missing."""
     try:
         from ApplicationServices import AXIsProcessTrusted  # type: ignore
-        trusted = AXIsProcessTrusted()
-        if not trusted:
-            print(
-                "[WARNING] Accessibility permission is not granted.\n"
+        if not AXIsProcessTrusted():
+            log.warning(
+                "Accessibility permission is not granted.\n"
                 "  Go to: System Settings -> Privacy & Security -> Accessibility\n"
-                "  and enable your Terminal / Python executable.",
-                file=sys.stderr,
+                "  and enable your Terminal / Python executable."
             )
     except (ImportError, AttributeError):
         pass  # Not available; pynput will raise its own error if needed

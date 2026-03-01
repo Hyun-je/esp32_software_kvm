@@ -5,8 +5,11 @@ Captures all key events and forwards them as (modifier, keycode) pairs.
 
 from __future__ import annotations
 
+import logging
 import threading
 from typing import Callable
+
+log = logging.getLogger(__name__)
 
 from pynput import keyboard
 

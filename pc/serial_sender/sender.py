@@ -5,17 +5,19 @@ Includes automatic reconnection logic on disconnect.
 
 from __future__ import annotations
 
+import logging
 import sys
 import threading
 import time
 import glob
-from typing import Optional
 
 import serial
 import serial.tools.list_ports
 
 from protocol import packet as pkt
 import config
+
+log = logging.getLogger(__name__)
 
 
 class SerialSender:
@@ -66,7 +68,7 @@ class SerialSender:
                 self._serial.write(data)
                 return True
             except serial.SerialException as exc:
-                print(f"[SerialSender] Write error: {exc}", file=sys.stderr)
+                log.error("Write error: %s", exc)
                 self._serial = None
                 return False
 
@@ -83,7 +85,7 @@ class SerialSender:
         with self._lock:
             try:
                 self._serial = serial.Serial(port, self._baud, timeout=1)
-                print(f"[SerialSender] Connected to {port} @ {self._baud} baud")
+                log.info("Connected to %s @ %d baud", port, self._baud)
             except serial.SerialException as exc:
                 self._serial = None
                 raise RuntimeError(f"Cannot open serial port {port}: {exc}") from exc
@@ -97,13 +99,13 @@ class SerialSender:
             with self._lock:
                 connected = self._serial is not None and self._serial.is_open
             if not connected:
-                print("[SerialSender] Connection lost. Attempting reconnect...", file=sys.stderr)
+                log.warning("Connection lost. Attempting reconnect...")
                 port = self._port or self._auto_detect_port()
                 if port:
                     try:
                         self._open(port)
                     except RuntimeError as exc:
-                        print(f"[SerialSender] Reconnect failed: {exc}", file=sys.stderr)
+                        log.warning("Reconnect failed: %s", exc)
 
     @staticmethod
     def _auto_detect_port() -> str | None:
