@@ -18,3 +18,7 @@ class KeyboardHookBase(ABC):
     @abstractmethod
     def stop(self) -> None:
         """Stop listening and release resources."""
+
+    @abstractmethod
+    def set_suppress(self, suppress: bool) -> None:
+        """Enable or disable OS-level key suppression (prevent delivery to PC)."""

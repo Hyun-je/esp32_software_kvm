@@ -11,6 +11,17 @@ SerialReceiver receiver(Serial);
 // BLE connection state (tracked to print connect/disconnect messages once)
 static bool _wasBleConnected = false;
 
+// Key-stuck protection: if a KEY_DOWN was received but no KEY_UP arrives
+// within this window (e.g. PC crashed), release all keys automatically.
+static uint32_t _lastPacketMs = 0;
+static bool _hasKeyDown = false;
+static const uint32_t KEY_IDLE_TIMEOUT_MS = 500;
+
+// Periodic BLE status broadcast so the PC always knows the current state
+// even if it missed the initial connect/disconnect event.
+static uint32_t _lastStatusMs = 0;
+static const uint32_t STATUS_INTERVAL_MS = 10000;
+
 // -----------------------------------------------------------------------
 // setup
 // -----------------------------------------------------------------------
@@ -40,11 +51,26 @@ void loop() {
         _wasBleConnected = false;
     }
 
+    // ---- Periodic BLE status broadcast ----
+    if (millis() - _lastStatusMs >= STATUS_INTERVAL_MS) {
+        _lastStatusMs = millis();
+        Serial.printf("[KVM] BLE status: %s\n", connected ? "connected" : "disconnected");
+    }
+
+    // ---- Key-stuck watchdog: release all if KEY_UP never arrived ----
+    if (_hasKeyDown && (millis() - _lastPacketMs > KEY_IDLE_TIMEOUT_MS)) {
+        bleHid.releaseAll();
+        _hasKeyDown = false;
+        Serial.println("[KVM] Idle timeout — released all keys.");
+    }
+
     // ---- Process incoming serial packets ----
     Packet pkt = receiver.poll();
     if (!pkt.valid) {
         return;  // Nothing ready yet
     }
+
+    _lastPacketMs = millis();
 
     Serial.printf("[KVM] Packet: type=0x%02X mod=0x%02X key=0x%02X\n",
                   pkt.eventType, pkt.modifier, pkt.keycode);
@@ -58,10 +84,12 @@ void loop() {
     switch (pkt.eventType) {
         case EVT_KEY_DOWN:
             bleHid.sendKey(pkt.modifier, pkt.keycode);
+            _hasKeyDown = true;
             break;
 
         case EVT_KEY_UP:
             bleHid.releaseAll();
+            _hasKeyDown = false;
             break;
 
         case EVT_CONSUMER_KEY: {
@@ -69,6 +97,10 @@ void loop() {
             bleHid.sendConsumer(static_cast<uint16_t>(pkt.keycode));
             break;
         }
+
+        case EVT_STATUS_REQUEST:
+            Serial.printf("[KVM] BLE status: %s\n", connected ? "connected" : "disconnected");
+            break;
 
         default:
             Serial.printf("[KVM] Unknown event type: 0x%02X\n", pkt.eventType);

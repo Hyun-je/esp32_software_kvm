@@ -6,7 +6,7 @@ Hooks keyboard input and forwards key events to the ESP32 via USB Serial.
 The ESP32 re-emits the keystrokes over BLE HID to a paired iPhone.
 
 Usage:
-    python main.py [--port PORT] [--baud BAUD] [--no-passthrough] [--list-ports] [--verbose]
+    python main.py [--port PORT] [--baud BAUD] [--list-ports] [--verbose]
 """
 
 from __future__ import annotations
@@ -40,7 +40,6 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--port", default=None, help="Serial port (e.g. COM3, /dev/cu.usbmodemXXX)")
     parser.add_argument("--baud", type=int, default=cfg.BAUD_RATE, help="Baud rate (default: 115200)")
-    parser.add_argument("--no-passthrough", action="store_true", help="Suppress local key delivery")
     parser.add_argument("--list-ports", action="store_true", help="List available serial ports and exit")
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable DEBUG logging (key events)")
     return parser
@@ -93,14 +92,12 @@ def main() -> None:
         log.error(exc)
         sys.exit(1)
 
-    passthrough = not args.no_passthrough
-
     # ------------------------------------------------------------------
     # Status window
     # ------------------------------------------------------------------
     window = StatusWindow(on_close=lambda: _shutdown())
     window.set_esp32(True)    # just connected
-    window.set_ble(False)     # unknown until ESP32 reports
+    window.set_ble(None)      # unknown until ESP32 reports
     window.set_forwarding(True)
 
     # ------------------------------------------------------------------
@@ -121,6 +118,9 @@ def main() -> None:
             state = "ON" if _forwarding[0] else "OFF"
             log.info("Forwarding %s (Ctrl+Alt+K)", state)
             window.set_forwarding(_forwarding[0])
+            hook.set_suppress(_forwarding[0])
+            if _forwarding[0]:
+                sender.send_status_request()
             return
         if not _forwarding[0]:
             return
@@ -170,6 +170,15 @@ def main() -> None:
             return
         stop_event[0] = True
         hook.stop()
+        # Release all keys that were sent as KEY_DOWN but not yet KEY_UP'd.
+        # This prevents stuck keys on the iPhone when the program exits.
+        for keycode in list(_pressed_keys):
+            sender.send_key_event(pkt.KEY_UP, 0, keycode)
+        _pressed_keys.clear()
+        # Belt-and-suspenders: send a zero-keycode KEY_UP which triggers
+        # releaseAll() on the ESP32 side regardless of its internal state.
+        sender.send_key_event(pkt.KEY_UP, 0, 0)
+        time.sleep(0.05)  # let the serial TX buffer drain before closing
         sender.disconnect()
         window.close()
         log.info("Stopped.")
@@ -183,18 +192,15 @@ def main() -> None:
     # ------------------------------------------------------------------
     def _esp32_log_reader():
         while not stop_event[0]:
-            try:
-                if sender._serial and sender._serial.is_open and sender._serial.in_waiting:
-                    line = sender._serial.readline().decode("utf-8", errors="replace").rstrip()
-                    if line:
-                        esp32_log.debug(line)
-                        if "[KVM] BLE connected." in line:
-                            window.set_ble(True)
-                        elif "[KVM] BLE disconnected." in line:
-                            window.set_ble(False)
-            except Exception:
-                pass
-            time.sleep(0.01)
+            line = sender.read_line()
+            if line:
+                esp32_log.debug(line)
+                if "[KVM] BLE connected." in line or "[KVM] BLE status: connected" in line:
+                    window.set_ble(True)
+                elif "[KVM] BLE disconnected." in line or "[KVM] BLE status: disconnected" in line:
+                    window.set_ble(False)
+            else:
+                time.sleep(0.01)
 
     threading.Thread(target=_esp32_log_reader, daemon=True, name="esp32-log").start()
 
@@ -207,13 +213,17 @@ def main() -> None:
 
     window.after(500, _poll_esp32)
 
+    # Request BLE status once the GUI event loop starts
+    window.after(200, sender.send_status_request)
+
     # ------------------------------------------------------------------
     # Start hooking
     # ------------------------------------------------------------------
-    log.info("Keyboard hook active. passthrough=%s  forwarding=ON", "ON" if passthrough else "OFF")
+    log.info("Keyboard hook active. forwarding=ON (PC input suppressed)")
     log.info("Press Ctrl+Alt+K to toggle forwarding. Ctrl+C to stop.")
 
     hook.start(on_press, on_release)
+    hook.set_suppress(True)  # forwarding starts ON → suppress PC delivery
 
     # tkinter event loop — runs until the window is closed
     window.run()

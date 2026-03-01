@@ -7,9 +7,10 @@ constexpr uint8_t PKT_END      = 0x55;
 constexpr uint8_t PKT_LEN      = 6;
 
 // Event types
-constexpr uint8_t EVT_KEY_DOWN     = 0x01;
-constexpr uint8_t EVT_KEY_UP       = 0x02;
-constexpr uint8_t EVT_CONSUMER_KEY = 0x03;
+constexpr uint8_t EVT_KEY_DOWN       = 0x01;
+constexpr uint8_t EVT_KEY_UP         = 0x02;
+constexpr uint8_t EVT_CONSUMER_KEY   = 0x03;
+constexpr uint8_t EVT_STATUS_REQUEST = 0x04;
 
 // Modifier bitmasks (HID spec, Keyboard/Keypad page)
 constexpr uint8_t MOD_LEFT_CTRL   = 0x01;

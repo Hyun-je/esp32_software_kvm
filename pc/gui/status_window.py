@@ -60,8 +60,15 @@ class StatusWindow:
     def set_esp32(self, connected: bool) -> None:
         self._root.after(0, self._set_color, "esp32", _GREEN if connected else _RED)
 
-    def set_ble(self, connected: bool) -> None:
-        self._root.after(0, self._set_color, "ble", _GREEN if connected else _RED)
+    def set_ble(self, connected: bool | None) -> None:
+        """None = unknown (gray), True = connected (green), False = disconnected (red)."""
+        if connected is True:
+            color = _GREEN
+        elif connected is False:
+            color = _RED
+        else:
+            color = _GRAY
+        self._root.after(0, self._set_color, "ble", color)
 
     def set_forwarding(self, enabled: bool) -> None:
         self._root.after(0, self._set_color, "fwd", _GREEN if enabled else _GRAY)

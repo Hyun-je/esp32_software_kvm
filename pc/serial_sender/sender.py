@@ -77,6 +77,35 @@ class SerialSender:
         with self._lock:
             return self._serial is not None and self._serial.is_open
 
+    def send_status_request(self) -> None:
+        """Ask the ESP32 to immediately report its current BLE status."""
+        data = pkt.encode(pkt.STATUS_REQUEST, 0, 0)
+        with self._lock:
+            if self._serial is None or not self._serial.is_open:
+                return
+            try:
+                self._serial.write(data)
+            except serial.SerialException as exc:
+                log.warning("Status request write error: %s", exc)
+                self._serial = None
+
+    def read_line(self) -> str | None:
+        """
+        Read one line from the serial port if data is available.
+        Returns the decoded line (stripped), or None if nothing to read.
+        Thread-safe — uses the internal lock.
+        """
+        with self._lock:
+            if self._serial is None or not self._serial.is_open:
+                return None
+            try:
+                if self._serial.in_waiting:
+                    return self._serial.readline().decode("utf-8", errors="replace").rstrip()
+            except serial.SerialException as exc:
+                log.warning("Serial read error: %s", exc)
+                self._serial = None
+        return None
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------

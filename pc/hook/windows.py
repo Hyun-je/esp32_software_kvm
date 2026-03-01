@@ -24,21 +24,34 @@ class WindowsKeyboardHook(KeyboardHookBase):
         self._on_release: Callable | None = None
         self._active_modifiers: int = 0
         self._lock = threading.Lock()
+        self._suppress: bool = False
 
     def start(self, on_press: Callable, on_release: Callable) -> None:
         self._on_press = on_press
         self._on_release = on_release
-        self._listener = keyboard.Listener(
-            on_press=self._handle_press,
-            on_release=self._handle_release,
-            suppress=False,
-        )
-        self._listener.start()
+        self._restart_listener()
 
     def stop(self) -> None:
         if self._listener:
             self._listener.stop()
             self._listener = None
+
+    def set_suppress(self, suppress: bool) -> None:
+        if self._suppress == suppress:
+            return
+        self._suppress = suppress
+        if self._listener:
+            self._restart_listener()
+
+    def _restart_listener(self) -> None:
+        if self._listener:
+            self._listener.stop()
+        self._listener = keyboard.Listener(
+            on_press=self._handle_press,
+            on_release=self._handle_release,
+            suppress=self._suppress,
+        )
+        self._listener.start()
 
     # ------------------------------------------------------------------
     # Internal helpers
