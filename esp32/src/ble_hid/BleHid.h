@@ -1,11 +1,25 @@
 #pragma once
-#include <BleKeyboard.h>
+#include <BleCombo.h>
+
+/**
+ * BleComboEx
+ *
+ * Minimal subclass of BleCombo that promotes the protected methods
+ * needed for raw HID report access to public scope.
+ */
+class BleComboEx : public BleCombo {
+public:
+    using BleCombo::BleCombo;
+    using BleCombo::begin;
+    using BleCombo::sendReport;
+    using BleCombo::releaseAll;
+};
 
 /**
  * BleHid
  *
- * Thin wrapper around ESP32-BLE-Keyboard that provides the interface used
- * by the KVM firmware:
+ * Thin wrapper around ESP32-BLE-Combo that provides the interface used
+ * by the KVM firmware (keyboard only — mouse unused):
  *   - begin()           — start BLE advertising
  *   - isConnected()     — check if an iOS/iPadOS device is paired
  *   - sendKey()         — press a key (modifier + HID keycode)
@@ -38,7 +52,7 @@ public:
     void sendConsumer(uint16_t usageId);
 
 private:
-    BleKeyboard _keyboard;
+    BleComboEx _keyboard;
 };
 
 // Singleton-style global instance
