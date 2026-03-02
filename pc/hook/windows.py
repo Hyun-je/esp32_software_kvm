@@ -34,6 +34,7 @@ class WindowsKeyboardHook(KeyboardHookBase):
     def stop(self) -> None:
         if self._listener:
             self._listener.stop()
+            self._listener.join(timeout=2.0)  # Increased from 1.0 for complete Windows hook cleanup
             self._listener = None
 
     def set_suppress(self, suppress: bool) -> None:
@@ -44,8 +45,31 @@ class WindowsKeyboardHook(KeyboardHookBase):
             self._restart_listener()
 
     def _restart_listener(self) -> None:
+        import time
+        old_listener = None
         if self._listener:
-            self._listener.stop()
+            old_listener = self._listener
+            old_listener.stop()
+            # Cannot join from within the listener thread itself (e.g. called
+            # from a key callback during set_suppress). Skip join in that case;
+            # the thread is already unwinding after the callback returns.
+            if threading.current_thread() is not old_listener:
+                old_listener.join(timeout=2.0)
+            self._listener = None  # Explicitly clear old reference
+
+        # Windows keyboard hook unhooking is asynchronous. We need to wait for the
+        # OS to fully release the hook before creating a new listener. Empirically,
+        # this requires ~1 second. Rather than a fixed sleep, we wait for the old
+        # listener thread to actually terminate.
+        if old_listener and hasattr(old_listener, '_thread') and old_listener._thread:
+            for _ in range(100):  # up to 5 seconds with 0.05s polls
+                if not old_listener._thread.is_alive():
+                    break
+                time.sleep(0.05)
+            else:
+                # Fallback: still apply the known-good delay
+                time.sleep(0.5)
+
         self._listener = keyboard.Listener(
             on_press=self._handle_press,
             on_release=self._handle_release,

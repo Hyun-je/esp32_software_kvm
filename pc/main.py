@@ -170,6 +170,11 @@ def main() -> None:
         if stop_event[0]:
             return
         stop_event[0] = True
+        # Release keyboard suppression before stopping the listener.
+        # If forwarding is ON (suppress=True) and we call hook.stop() directly,
+        # a join timeout can leave the suppressing hook alive during process exit,
+        # which blocks all Windows keyboard input until the OS cleans it up.
+        hook.set_suppress(False)
         hook.stop()
         # Release all keys that were sent as KEY_DOWN but not yet KEY_UP'd.
         # This prevents stuck keys on the iPhone when the program exits.
@@ -179,6 +184,7 @@ def main() -> None:
         # Belt-and-suspenders: send a zero-keycode KEY_UP which triggers
         # releaseAll() on the ESP32 side regardless of its internal state.
         sender.send_key_event(pkt.KEY_UP, 0, 0)
+        sender.send_forwarding_state(False)  # ensure ESP32 disconnects BLE on exit
         time.sleep(0.05)  # let the serial TX buffer drain before closing
         sender.disconnect()
         window.close()
