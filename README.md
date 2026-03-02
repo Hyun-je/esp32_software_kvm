@@ -34,7 +34,9 @@ esp32_software_kvm/
 ├── pc/                          # PC 측 Python 프로그램
 │   ├── requirements.txt
 │   ├── main.py                  # CLI 진입점
-│   ├── config.py                # 포트, 보드레이트, 패스스루 설정
+│   ├── config.py                # 포트, 보드레이트, 토글 단축키 설정
+│   ├── gui/
+│   │   └── status_window.py     # tkinter 상태창 (ESP32/BLE/FWD LED 인디케이터)
 │   ├── hook/
 │   │   ├── base.py              # 키보드 훅 추상 인터페이스
 │   │   ├── windows.py           # Windows pynput 훅
@@ -58,6 +60,36 @@ esp32_software_kvm/
 
 ---
 
+## 주요 기능
+
+### 포워딩 토글 (Ctrl+Alt+K)
+- **Ctrl+Alt+K** 단축키로 ESP32 포워딩을 켜거나 끔
+- 포워딩 ON: PC 키보드 입력이 억제되어 iPhone으로만 전달됨
+- 포워딩 OFF: PC 키보드가 정상 동작
+- 상태 전환 시 ESP32에 `EVT_FORWARDING_ON/OFF` 패킷을 전송하여 LED와 동기화
+
+### 상태창 (tkinter GUI)
+- 항상 최상단에 표시되는 소형 상태창 (추가 의존성 없음, stdlib tkinter 사용)
+- 3개 LED 인디케이터:
+  - **ESP32**: 시리얼 연결 상태 (초록/빨강)
+  - **BLE**: iPhone BLE 연결 상태 (초록/빨강/회색=미확인)
+  - **FWD**: 포워딩 활성화 여부 (초록/회색)
+
+### CapsLock → Ctrl+Space 리맵
+- CapsLock 입력을 Ctrl+Space로 변환하여 iOS의 한/영 전환 트리거
+- iPhone에서 별도 설정 없이 CapsLock 키로 입력 언어 전환 가능
+
+### ESP32 IO8 LED 인디케이터
+- 포워딩 ON: LED 상시 점등
+- 포워딩 OFF: LED 소등
+- 키 패킷 수신 시: 30ms 깜빡임 후 복구
+
+### 키 고착 방지
+- KEY_DOWN 이후 500ms 내에 KEY_UP이 오지 않으면 자동으로 모든 키 해제
+- 프로그램 종료 시 눌린 상태의 모든 키를 자동으로 KEY_UP 처리
+
+---
+
 ## 시리얼 프로토콜
 
 PC ↔ ESP32 간 6바이트 바이너리 패킷:
@@ -66,7 +98,13 @@ PC ↔ ESP32 간 6바이트 바이너리 패킷:
 | 0xAA | TYPE | MOD | KEYCODE | CHECKSUM | 0x55 |
 ```
 
-- `TYPE`: `0x01` = KEY_DOWN, `0x02` = KEY_UP, `0x03` = CONSUMER_KEY
+- `TYPE`: 이벤트 타입
+  - `0x01` = KEY_DOWN
+  - `0x02` = KEY_UP
+  - `0x03` = CONSUMER_KEY
+  - `0x04` = STATUS_REQUEST (ESP32 BLE 상태 응답 요청)
+  - `0x05` = FORWARDING_ON (포워딩 활성화 알림)
+  - `0x06` = FORWARDING_OFF (포워딩 비활성화 알림)
 - `MOD`: HID 수정자 키 비트 플래그 (Ctrl/Shift/Alt/GUI)
 - `KEYCODE`: HID Usage ID (PC에서 변환 완료)
 - `CHECKSUM`: `TYPE ^ MOD ^ KEYCODE`
@@ -86,9 +124,9 @@ python main.py
 **주요 옵션:**
 
 ```
---port PORT         시리얼 포트 지정 (기본: 자동 탐색)
+--port PORT         시리얼 포트 지정 (기본: VID/PID로 자동 탐색)
 --baud BAUD         보드레이트 (기본: 115200)
---no-passthrough    로컬 OS로 키 전달 차단
+--verbose, -v       DEBUG 로그 활성화 (키 이벤트 출력)
 --list-ports        사용 가능한 시리얼 포트 목록 출력
 ```
 
@@ -115,3 +153,4 @@ pio run --target upload
 - 내장 USB CDC 사용 (외부 USB-UART 칩 불필요)
 - iPhone BLE 페어링 최초 1회 필요
 - USB CDC + BLE 동시 사용 시 RAM(400KB) 여유 확인
+- LED 핀: IO8 (active-low)
