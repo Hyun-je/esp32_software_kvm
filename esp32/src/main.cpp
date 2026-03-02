@@ -97,14 +97,17 @@ void loop() {
     // Forwarding state packets control the LED regardless of BLE connection
     if (pkt.eventType == EVT_FORWARDING_ON) {
         _forwarding = true;
+        bleHid.reconnect();
         digitalWrite(LED_PIN, LOW);
-        Serial.println("[KVM] Forwarding ON — LED on.");
+        Serial.println("[KVM] Forwarding ON — BLE advertising resumed.");
         return;
     }
     if (pkt.eventType == EVT_FORWARDING_OFF) {
         _forwarding = false;
+        bleHid.disconnect();  // releases keys + disconnects + stops advertising
+        _hasKeyDown = false;
         digitalWrite(LED_PIN, HIGH);
-        Serial.println("[KVM] Forwarding OFF — LED off.");
+        Serial.println("[KVM] Forwarding OFF — BLE disconnected.");
         return;
     }
 

@@ -51,6 +51,18 @@ public:
      */
     void sendConsumer(uint16_t usageId);
 
+    /**
+     * Disconnect all BLE clients and stop advertising.
+     * Call when forwarding is turned OFF so the iOS virtual keyboard appears.
+     */
+    void disconnect();
+
+    /**
+     * Resume BLE advertising so the iOS device can reconnect.
+     * Call when forwarding is turned ON.
+     */
+    void reconnect();
+
 private:
     BleComboEx _keyboard;
 };

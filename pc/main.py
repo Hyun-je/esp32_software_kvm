@@ -98,12 +98,12 @@ def main() -> None:
     window = StatusWindow(on_close=lambda: _shutdown())
     window.set_esp32(True)    # just connected
     window.set_ble(None)      # unknown until ESP32 reports
-    window.set_forwarding(True)
+    window.set_forwarding(False)
 
     # ------------------------------------------------------------------
     # Forwarding toggle state (Ctrl+Alt+K to switch on/off)
     # ------------------------------------------------------------------
-    _forwarding = [True]  # list so inner functions can mutate it
+    _forwarding = [False]  # list so inner functions can mutate it
     _pressed_keys: set[int] = set()  # keycodes sent as KEY_DOWN but not yet KEY_UP'd
 
     # ------------------------------------------------------------------
@@ -216,16 +216,16 @@ def main() -> None:
 
     # Request BLE status and sync forwarding state once the GUI event loop starts
     window.after(200, sender.send_status_request)
-    window.after(250, lambda: sender.send_forwarding_state(True))
+    window.after(250, lambda: sender.send_forwarding_state(False))
 
     # ------------------------------------------------------------------
     # Start hooking
     # ------------------------------------------------------------------
-    log.info("Keyboard hook active. forwarding=ON (PC input suppressed)")
+    log.info("Keyboard hook active. forwarding=OFF (PC input not suppressed)")
     log.info("Press Ctrl+Alt+K to toggle forwarding. Ctrl+C to stop.")
 
     hook.start(on_press, on_release)
-    hook.set_suppress(True)  # forwarding starts ON → suppress PC delivery
+    hook.set_suppress(False)  # forwarding starts OFF → do not suppress PC delivery
 
     # tkinter event loop — runs until the window is closed
     window.run()

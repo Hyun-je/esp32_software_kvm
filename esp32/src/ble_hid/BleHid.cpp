@@ -1,4 +1,5 @@
 #include "BleHid.h"
+#include <NimBLEDevice.h>
 
 // Global singleton
 BleHid bleHid;
@@ -28,6 +29,22 @@ void BleHid::sendKey(uint8_t modifier, uint8_t keycode) {
 void BleHid::releaseAll() {
     if (!_keyboard.isConnected()) return;
     _keyboard.releaseAll();
+}
+
+void BleHid::disconnect() {
+    releaseAll();  // don't leave keys stuck before disconnecting
+    NimBLEServer* pServer = NimBLEDevice::getServer();
+    if (pServer) {
+        uint8_t count = pServer->getConnectedCount();
+        for (uint8_t i = 0; i < count; i++) {
+            pServer->disconnect(pServer->getPeerInfo(i).getConnHandle());
+        }
+    }
+    NimBLEDevice::stopAdvertising();
+}
+
+void BleHid::reconnect() {
+    NimBLEDevice::startAdvertising();
 }
 
 void BleHid::sendConsumer(uint16_t usageId) {
