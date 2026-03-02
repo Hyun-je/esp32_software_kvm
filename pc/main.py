@@ -119,6 +119,7 @@ def main() -> None:
             log.info("Forwarding %s (Ctrl+Alt+K)", state)
             window.set_forwarding(_forwarding[0])
             hook.set_suppress(_forwarding[0])
+            sender.send_forwarding_state(_forwarding[0])
             if _forwarding[0]:
                 sender.send_status_request()
             return
@@ -213,8 +214,9 @@ def main() -> None:
 
     window.after(500, _poll_esp32)
 
-    # Request BLE status once the GUI event loop starts
+    # Request BLE status and sync forwarding state once the GUI event loop starts
     window.after(200, sender.send_status_request)
+    window.after(250, lambda: sender.send_forwarding_state(True))
 
     # ------------------------------------------------------------------
     # Start hooking

@@ -89,6 +89,19 @@ class SerialSender:
                 log.warning("Status request write error: %s", exc)
                 self._serial = None
 
+    def send_forwarding_state(self, on: bool) -> None:
+        """Notify the ESP32 whether forwarding is active (controls IO8 LED)."""
+        event_type = pkt.FORWARDING_ON if on else pkt.FORWARDING_OFF
+        data = pkt.encode(event_type, 0, 0)
+        with self._lock:
+            if self._serial is None or not self._serial.is_open:
+                return
+            try:
+                self._serial.write(data)
+            except serial.SerialException as exc:
+                log.warning("Forwarding state write error: %s", exc)
+                self._serial = None
+
     def read_line(self) -> str | None:
         """
         Read one line from the serial port if data is available.

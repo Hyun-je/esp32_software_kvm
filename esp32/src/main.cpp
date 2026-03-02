@@ -8,6 +8,15 @@
 // -----------------------------------------------------------------------
 SerialReceiver receiver(Serial);
 
+// LED on IO8:
+//   - forwarding ON  → LED steady ON
+//   - forwarding OFF → LED OFF
+//   - key packet received → brief OFF (30 ms) then restore to forwarding state
+static const uint8_t  LED_PIN        = 8;
+static const uint32_t LED_BLINK_MS   = 30;
+static bool     _forwarding    = false;  // updated by EVT_FORWARDING_ON/OFF
+static uint32_t _ledRestoreAt  = 0;     // when to restore LED after blink
+
 // BLE connection state (tracked to print connect/disconnect messages once)
 static bool _wasBleConnected = false;
 
@@ -26,6 +35,10 @@ static const uint32_t STATUS_INTERVAL_MS = 10000;
 // setup
 // -----------------------------------------------------------------------
 void setup() {
+    // LED pin setup (active-low: LOW = ON, HIGH = OFF)
+    pinMode(LED_PIN, OUTPUT);
+    digitalWrite(LED_PIN, HIGH);
+
     // USB CDC Serial @ 115200 — matches PC sender config
     Serial.begin(115200);
 
@@ -57,6 +70,12 @@ void loop() {
         Serial.printf("[KVM] BLE status: %s\n", connected ? "connected" : "disconnected");
     }
 
+    // ---- LED blink restore ----
+    if (_ledRestoreAt && millis() >= _ledRestoreAt) {
+        digitalWrite(LED_PIN, _forwarding ? LOW : HIGH);
+        _ledRestoreAt = 0;
+    }
+
     // ---- Key-stuck watchdog: release all if KEY_UP never arrived ----
     if (_hasKeyDown && (millis() - _lastPacketMs > KEY_IDLE_TIMEOUT_MS)) {
         bleHid.releaseAll();
@@ -75,6 +94,27 @@ void loop() {
     Serial.printf("[KVM] Packet: type=0x%02X mod=0x%02X key=0x%02X\n",
                   pkt.eventType, pkt.modifier, pkt.keycode);
 
+    // Forwarding state packets control the LED regardless of BLE connection
+    if (pkt.eventType == EVT_FORWARDING_ON) {
+        _forwarding = true;
+        digitalWrite(LED_PIN, LOW);
+        Serial.println("[KVM] Forwarding ON — LED on.");
+        return;
+    }
+    if (pkt.eventType == EVT_FORWARDING_OFF) {
+        _forwarding = false;
+        digitalWrite(LED_PIN, HIGH);
+        Serial.println("[KVM] Forwarding OFF — LED off.");
+        return;
+    }
+
+    // Blink LED on key packets (OFF briefly, then restore)
+    if (pkt.eventType == EVT_KEY_DOWN || pkt.eventType == EVT_KEY_UP
+            || pkt.eventType == EVT_CONSUMER_KEY) {
+        digitalWrite(LED_PIN, HIGH);
+        _ledRestoreAt = millis() + LED_BLINK_MS;
+    }
+
     if (!connected) {
         // Drop packet — iPhone not connected
         Serial.println("[KVM] BLE not connected; packet dropped.");
@@ -92,11 +132,9 @@ void loop() {
             _hasKeyDown = false;
             break;
 
-        case EVT_CONSUMER_KEY: {
-            // keycode holds the low byte; for now single-byte consumer IDs suffice
+        case EVT_CONSUMER_KEY:
             bleHid.sendConsumer(static_cast<uint16_t>(pkt.keycode));
             break;
-        }
 
         case EVT_STATUS_REQUEST:
             Serial.printf("[KVM] BLE status: %s\n", connected ? "connected" : "disconnected");
