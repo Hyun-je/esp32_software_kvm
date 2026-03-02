@@ -62,6 +62,8 @@ class WindowsKeyboardHook(KeyboardHookBase):
         if isinstance(key, keyboard.Key):
             return special_key_to_hid(key)
         if isinstance(key, keyboard.KeyCode):
+            if key.vk == 0x15:  # VK_HANGUL (한/영) -> Ctrl+Space
+                return (0x01, 0x2C)
             if key.char:
                 return char_to_hid(key.char)
             # Fallback: try vk-based mapping (Windows virtual key codes)
@@ -125,6 +127,8 @@ _VK_HID: dict[int, int] = {
     0x90: 0x53,  # VK_NUMLOCK
     0x91: 0x47,  # VK_SCROLL
     0x14: 0x39,  # VK_CAPITAL (Caps Lock)
+    0x15: 0x90,  # VK_HANGUL -> HID Lang1 (한/영)
+    0x19: 0x91,  # VK_HANJA  -> HID Lang2 (한자)
 }
 
 
