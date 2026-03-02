@@ -9,6 +9,10 @@ BleHid::BleHid(const char* deviceName, const char* manufacturer, uint8_t battery
 
 void BleHid::begin() {
     _keyboard.begin();
+    // Reduce TX power to limit BLE range (nearby device only).
+    // ESP_PWR_LVL_N12 = -12 dBm. Adjust up/down as needed:
+    //   N27/N24/N21/N18/N15/N12/N9/N6/N3/N0/P3/P6/P9 (dBm)
+    NimBLEDevice::setPower(ESP_PWR_LVL_P9);
 }
 
 bool BleHid::isConnected() {
