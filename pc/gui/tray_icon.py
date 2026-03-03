@@ -12,29 +12,28 @@ from typing import Callable, Optional
 import pystray
 from PIL import Image, ImageDraw
 
-_GREEN = (76, 175, 80)
-_RED   = (244, 67, 54)
-_GRAY  = (66, 66, 66)
+_GREEN  = (76, 175, 80)
+_YELLOW = (255, 193, 7)
+_RED    = (244, 67, 54)
 
 _ICON_SIZE = 64
-_DOT_R     = 9
-_DOT_Y     = _ICON_SIZE // 2
-_DOT_XS    = [14, 32, 50]  # ESP32, BLE, FWD
+_MARGIN    = 6
+
+
+def _circle_color(esp32: bool, ble, forwarding: bool):
+    if esp32 and ble is True:
+        return _GREEN if forwarding else _YELLOW
+    return _RED
 
 
 def _make_image(esp32: bool, ble, forwarding: bool) -> Image.Image:
     img  = Image.new("RGBA", (_ICON_SIZE, _ICON_SIZE), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-
-    esp32_color = _GREEN if esp32 else _RED
-    ble_color   = _GREEN if ble is True else (_RED if ble is False else _GRAY)
-    fwd_color   = _GREEN if forwarding else _GRAY
-
-    for x, color in zip(_DOT_XS, [esp32_color, ble_color, fwd_color]):
-        draw.ellipse(
-            [x - _DOT_R, _DOT_Y - _DOT_R, x + _DOT_R, _DOT_Y + _DOT_R],
-            fill=color,
-        )
+    color = _circle_color(esp32, ble, forwarding)
+    draw.ellipse(
+        [_MARGIN, _MARGIN, _ICON_SIZE - _MARGIN, _ICON_SIZE - _MARGIN],
+        fill=color,
+    )
     return img
 
 
@@ -89,7 +88,7 @@ class TrayIcon:
         menu = pystray.Menu(
             pystray.MenuItem("Toggle Forwarding  (Ctrl+Alt+K)", self._on_toggle_click),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Quit  (Ctrl+Alt+X)", self._on_quit_click),
+            pystray.MenuItem("Quit  (Ctrl+Alt+X)", None, enabled=False),
         )
         self._icon = pystray.Icon(
             "ESP32 KVM",
