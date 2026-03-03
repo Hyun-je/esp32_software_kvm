@@ -25,18 +25,27 @@ _INDICATORS = [
 class StatusWindow:
     """Small always-on-top window showing three LED-style status indicators."""
 
-    def __init__(self, on_close: Callable | None = None) -> None:
+    def __init__(self) -> None:
         root = tk.Tk()
-        root.title("KVM")
-        root.resizable(False, False)
-        root.attributes("-topmost", True)
+        root.overrideredirect(True)   # remove title bar and close button
         root.configure(bg=_BG)
-
-        if on_close:
-            root.protocol("WM_DELETE_WINDOW", on_close)
 
         frame = tk.Frame(root, bg=_BG, padx=12, pady=10)
         frame.pack()
+
+        # Allow dragging the borderless window
+        self._drag_x = 0
+        self._drag_y = 0
+
+        def _on_drag_start(event: tk.Event) -> None:
+            self._drag_x = event.x_root - root.winfo_x()
+            self._drag_y = event.y_root - root.winfo_y()
+
+        def _on_drag_move(event: tk.Event) -> None:
+            root.geometry(f"+{event.x_root - self._drag_x}+{event.y_root - self._drag_y}")
+
+        root.bind("<ButtonPress-1>", _on_drag_start)
+        root.bind("<B1-Motion>", _on_drag_move)
 
         self._root = root
         self._leds: dict[str, tuple[tk.Canvas, int]] = {}
@@ -79,6 +88,15 @@ class StatusWindow:
 
     def run(self) -> None:
         """Start the tkinter event loop (blocks until the window is closed)."""
+        # Position at bottom-right corner before entering the event loop
+        self._root.update_idletasks()
+        margin_x = 16
+        margin_y = 64
+        w = self._root.winfo_width()
+        h = self._root.winfo_height()
+        sw = self._root.winfo_screenwidth()
+        sh = self._root.winfo_screenheight()
+        self._root.geometry(f"+{sw - w - margin_x}+{sh - h - margin_y}")
         self._root.mainloop()
 
     def close(self) -> None:

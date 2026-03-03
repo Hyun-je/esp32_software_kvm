@@ -95,7 +95,7 @@ def main() -> None:
     # ------------------------------------------------------------------
     # Status window
     # ------------------------------------------------------------------
-    window = StatusWindow(on_close=lambda: _shutdown())
+    window = StatusWindow()
     window.set_esp32(True)    # just connected
     window.set_ble(None)      # unknown until ESP32 reports
     window.set_forwarding(False)
