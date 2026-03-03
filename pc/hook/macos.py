@@ -53,6 +53,11 @@ class MacOSKeyboardHook(KeyboardHookBase):
             self._listener.stop()
             self._listener = None
 
+    def shutdown(self) -> None:
+        # On macOS the CGEventTap is removed synchronously when the listener
+        # stops, so simply stopping is sufficient — no suppress toggle needed.
+        self.stop()
+
     def set_suppress(self, suppress: bool) -> None:
         if self._suppress == suppress:
             return

@@ -170,12 +170,10 @@ def main() -> None:
         if stop_event[0]:
             return
         stop_event[0] = True
-        # Release keyboard suppression before stopping the listener.
-        # If forwarding is ON (suppress=True) and we call hook.stop() directly,
-        # a join timeout can leave the suppressing hook alive during process exit,
-        # which blocks all Windows keyboard input until the OS cleans it up.
-        hook.set_suppress(False)
-        hook.stop()
+        # Shut down the hook: releases OS-level suppression first, then stops
+        # the listener. Prevents stuck keyboard input on Windows if the app exits
+        # while forwarding (suppress=True) is active.
+        hook.shutdown()
         # Release all keys that were sent as KEY_DOWN but not yet KEY_UP'd.
         # This prevents stuck keys on the iPhone when the program exits.
         for keycode in list(_pressed_keys):

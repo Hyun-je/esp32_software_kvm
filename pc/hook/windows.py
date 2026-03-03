@@ -37,6 +37,15 @@ class WindowsKeyboardHook(KeyboardHookBase):
             self._listener.join(timeout=2.0)  # Increased from 1.0 for complete Windows hook cleanup
             self._listener = None
 
+    def shutdown(self) -> None:
+        # Release suppression first: prevents the OS hook from blocking all
+        # keyboard input if the app exits while forwarding (suppress=True) is on.
+        # _restart_listener() replaces the hook synchronously (with its Windows
+        # thread-termination wait), so by the time stop() is called the
+        # suppressing hook is already gone.
+        self.set_suppress(False)
+        self.stop()
+
     def set_suppress(self, suppress: bool) -> None:
         if self._suppress == suppress:
             return

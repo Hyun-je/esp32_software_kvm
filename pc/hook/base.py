@@ -22,3 +22,7 @@ class KeyboardHookBase(ABC):
     @abstractmethod
     def set_suppress(self, suppress: bool) -> None:
         """Enable or disable OS-level key suppression (prevent delivery to PC)."""
+
+    @abstractmethod
+    def shutdown(self) -> None:
+        """Gracefully shut down the hook on app exit."""
