@@ -112,6 +112,17 @@ def main() -> None:
     def on_press(modifier: int, keycode: int) -> None:
         if keycode == 0 and modifier == 0:
             return
+        # Quit hotkey: disable forwarding then exit after 0.5 s
+        if modifier == cfg.QUIT_MOD and keycode == cfg.QUIT_KEY:
+            if _forwarding[0]:
+                _forwarding[0] = False
+                log.info("Forwarding OFF (quit hotkey)")
+                window.set_forwarding(False)
+                hook.set_suppress(False)
+                sender.send_forwarding_state(False)
+            log.info("Quit hotkey pressed — exiting in 0.5 s (Ctrl+Alt+X)")
+            threading.Timer(0.5, _shutdown).start()
+            return
         # Toggle forwarding when the hotkey is pressed
         if modifier == cfg.TOGGLE_MOD and keycode == cfg.TOGGLE_KEY:
             _forwarding[0] = not _forwarding[0]
@@ -140,6 +151,9 @@ def main() -> None:
 
     def on_release(modifier: int, keycode: int) -> None:
         if keycode == 0 and modifier == 0:
+            return
+        # Quit hotkey release is always suppressed
+        if modifier == cfg.QUIT_MOD and keycode == cfg.QUIT_KEY:
             return
         # Toggle hotkey release is always suppressed
         if modifier == cfg.TOGGLE_MOD and keycode == cfg.TOGGLE_KEY:
@@ -226,7 +240,7 @@ def main() -> None:
     # Start hooking
     # ------------------------------------------------------------------
     log.info("Keyboard hook active. forwarding=OFF (PC input not suppressed)")
-    log.info("Press Ctrl+Alt+K to toggle forwarding. Ctrl+C to stop.")
+    log.info("Press Ctrl+Alt+K to toggle forwarding. Ctrl+Alt+X to quit. Ctrl+C to stop.")
 
     hook.start(on_press, on_release)
     hook.set_suppress(False)  # forwarding starts OFF → do not suppress PC delivery

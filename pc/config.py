@@ -20,3 +20,8 @@ ESP32_PIDS = (0x1001, 0x0002)  # ESP32-C3 USB CDC PIDs
 # Default: Ctrl+Alt+K  (MOD_LEFT_CTRL=0x01 | MOD_LEFT_ALT=0x04 => 0x05, K=0x0E)
 TOGGLE_MOD: int = 0x05   # Left Ctrl + Left Alt
 TOGGLE_KEY: int = 0x0E   # K
+
+# Hotkey to disable forwarding and quit after 0.5 s.
+# Default: Ctrl+Alt+X  (same modifier mask, X=0x1B)
+QUIT_MOD: int = 0x05   # Left Ctrl + Left Alt
+QUIT_KEY: int = 0x1B   # X

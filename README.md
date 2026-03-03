@@ -68,6 +68,10 @@ esp32_software_kvm/
 - 포워딩 OFF: PC 키보드가 정상 동작
 - 상태 전환 시 ESP32에 `EVT_FORWARDING_ON/OFF` 패킷을 전송하여 LED와 동기화
 
+### 종료 단축키 (Ctrl+Alt+X)
+- **Ctrl+Alt+X** 단축키로 포워딩을 즉시 OFF로 전환한 뒤 0.5초 후 프로그램 종료
+- 포워딩 중에도 안전하게 종료 가능 (키 고착 방지 처리 포함)
+
 ### 상태창 (tkinter GUI)
 - 항상 최상단에 표시되는 소형 상태창 (추가 의존성 없음, stdlib tkinter 사용)
 - 3개 LED 인디케이터:
