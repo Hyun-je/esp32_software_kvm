@@ -131,11 +131,13 @@ class WindowsKeyboardHook(KeyboardHookBase):
 
     def _resolve(self, event: kb.KeyboardEvent) -> tuple[int, int]:
         """Return (modifier_delta, keycode) for a keyboard event."""
-        # VK_HANGUL (한/영) -> Ctrl+Space for iOS IME compatibility
-        if event.vk == 0x15:
-            return (0x01, 0x2C)
-
+        vk = getattr(event, 'vk', None)
         name = (event.name or '').lower()
+
+        # VK_HANGUL (한/영) -> Ctrl+Space for iOS IME compatibility
+        # keyboard lib reports scan 242 as 'hangeul'; also accept 'hangul' and VK 0x15
+        if vk == 0x15 or name in ('hangul', 'hangeul'):
+            return (0x01, 0x2C)
 
         # Modifier keys
         mod = _MODIFIER_NAME_MAP.get(name, 0)
@@ -154,8 +156,8 @@ class WindowsKeyboardHook(KeyboardHookBase):
                 return result
 
         # VK-based fallback for any remaining unmapped keys
-        if event.vk is not None:
-            hid = _vk_to_hid(event.vk)
+        if vk is not None:
+            hid = _vk_to_hid(vk)
             return (0, hid)
 
         return (0, 0)
