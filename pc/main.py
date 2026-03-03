@@ -42,6 +42,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--baud", type=int, default=cfg.BAUD_RATE, help="Baud rate (default: 115200)")
     parser.add_argument("--list-ports", action="store_true", help="List available serial ports and exit")
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable DEBUG logging (key events)")
+    parser.add_argument("--no-tray", action="store_true", help="Use tkinter window instead of system tray (Windows only)")
     return parser
 
 
@@ -93,9 +94,17 @@ def main() -> None:
         sys.exit(1)
 
     # ------------------------------------------------------------------
-    # Status window
+    # Status window / tray icon
     # ------------------------------------------------------------------
-    window = StatusWindow()
+    if sys.platform == "win32" and not args.no_tray:
+        try:
+            from gui.tray_icon import TrayIcon
+            window = TrayIcon()
+        except ImportError:
+            log.warning("pystray/Pillow not installed — falling back to tkinter window (pip install pystray Pillow)")
+            window = StatusWindow()
+    else:
+        window = StatusWindow()
     window.set_esp32(True)    # just connected
     window.set_ble(None)      # unknown until ESP32 reports
     window.set_forwarding(False)
@@ -235,6 +244,13 @@ def main() -> None:
     # Request BLE status and sync forwarding state once the GUI event loop starts
     window.after(200, sender.send_status_request)
     window.after(250, lambda: sender.send_forwarding_state(False))
+
+    # ------------------------------------------------------------------
+    # Tray menu callbacks (only used when window is a TrayIcon)
+    # ------------------------------------------------------------------
+    if hasattr(window, 'on_toggle'):
+        window.on_toggle = lambda: on_press(cfg.TOGGLE_MOD, cfg.TOGGLE_KEY)
+        window.on_quit   = _shutdown
 
     # ------------------------------------------------------------------
     # Start hooking

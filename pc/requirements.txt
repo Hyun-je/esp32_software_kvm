@@ -1,3 +1,6 @@
 pynput>=1.7.6
 keyboard>=0.13.5
 pyserial>=3.5
+# Windows system tray icon (optional, auto-used on Windows)
+pystray>=0.19.5
+Pillow>=9.0.0
