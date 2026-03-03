@@ -6,7 +6,10 @@ References:
   - pynput Key enum values and vk codes
 """
 
-from pynput.keyboard import Key
+try:
+    from pynput.keyboard import Key
+except ImportError:  # Windows-only install without pynput
+    Key = None  # type: ignore[assignment,misc]
 
 # Modifier bitmask constants (HID spec)
 MOD_LEFT_CTRL = 0x01

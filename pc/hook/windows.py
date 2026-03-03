@@ -1,5 +1,5 @@
 """
-Windows keyboard hook using pynput.
+Windows keyboard hook using the `keyboard` library.
 Captures all key events and forwards them as (modifier, keycode) pairs.
 """
 
@@ -9,123 +9,177 @@ import logging
 import threading
 from typing import Callable
 
-log = logging.getLogger(__name__)
-
-from pynput import keyboard
+import keyboard as kb
 
 from .base import KeyboardHookBase
-from .hid_keycodes import char_to_hid, special_key_to_hid, MODIFIER_KEY_MAP
+from .hid_keycodes import char_to_hid
+
+log = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Modifier key name -> HID modifier bitmask
+# ---------------------------------------------------------------------------
+_MODIFIER_NAME_MAP: dict[str, int] = {
+    'left ctrl':     0x01,
+    'right ctrl':    0x10,
+    'left shift':    0x02,
+    'right shift':   0x20,
+    'left alt':      0x04,
+    'right alt':     0x40,
+    'left windows':  0x08,
+    'right windows': 0x80,
+    # Unsided fallbacks (keyboard lib may report these for some keyboards)
+    'ctrl':          0x01,
+    'shift':         0x02,
+    'alt':           0x04,
+    'windows':       0x08,
+}
+
+# ---------------------------------------------------------------------------
+# keyboard library key name -> HID Usage ID (keyboard page 0x07)
+# ---------------------------------------------------------------------------
+_NAME_TO_HID: dict[str, int] = {
+    'enter':        0x28,
+    'esc':          0x29,
+    'backspace':    0x2A,
+    'tab':          0x2B,
+    'space':        0x2C,
+    'caps lock':    0x39,
+    'f1':  0x3A, 'f2':  0x3B, 'f3':  0x3C, 'f4':  0x3D,
+    'f5':  0x3E, 'f6':  0x3F, 'f7':  0x40, 'f8':  0x41,
+    'f9':  0x42, 'f10': 0x43, 'f11': 0x44, 'f12': 0x45,
+    'print screen': 0x46,
+    'scroll lock':  0x47,
+    'pause':        0x48,
+    'insert':       0x49,
+    'home':         0x4A,
+    'page up':      0x4B,
+    'delete':       0x4C,
+    'end':          0x4D,
+    'page down':    0x4E,
+    'right':        0x4F,
+    'left':         0x50,
+    'down':         0x51,
+    'up':           0x52,
+    'num lock':     0x53,
+    # Numpad operators
+    'decimal':      0x63,
+    'divide':       0x54,
+    'multiply':     0x55,
+    'subtract':     0x56,
+    'add':          0x57,
+    # Numpad digits (reported as 'num N' when numlock is on)
+    'num 0': 0x62,
+    'num 1': 0x59, 'num 2': 0x5A, 'num 3': 0x5B,
+    'num 4': 0x5C, 'num 5': 0x5D, 'num 6': 0x5E,
+    'num 7': 0x5F, 'num 8': 0x60, 'num 9': 0x61,
+    # Korean IME
+    'hanja':        0x91,  # HID Lang2 (한자)
+    # Application / menu key
+    'menu':         0x65,
+    'apps':         0x65,
+}
 
 
 class WindowsKeyboardHook(KeyboardHookBase):
     def __init__(self) -> None:
-        self._listener: keyboard.Listener | None = None
         self._on_press: Callable | None = None
         self._on_release: Callable | None = None
         self._active_modifiers: int = 0
         self._lock = threading.Lock()
         self._suppress: bool = False
+        self._hook = None
 
     def start(self, on_press: Callable, on_release: Callable) -> None:
         self._on_press = on_press
         self._on_release = on_release
-        self._restart_listener()
+        self._install_hook()
 
     def stop(self) -> None:
-        if self._listener:
-            self._listener.stop()
-            self._listener.join(timeout=2.0)  # Increased from 1.0 for complete Windows hook cleanup
-            self._listener = None
+        self._uninstall_hook()
 
     def shutdown(self) -> None:
-        # Release suppression first: prevents the OS hook from blocking all
-        # keyboard input if the app exits while forwarding (suppress=True) is on.
-        # _restart_listener() replaces the hook synchronously (with its Windows
-        # thread-termination wait), so by the time stop() is called the
-        # suppressing hook is already gone.
-        self.set_suppress(False)
-        self.stop()
+        # Directly uninstall any active hook without going through set_suppress():
+        #   - avoids the early-return guard (suppress already False → no-op)
+        #   - avoids the unnecessary hook reinstall cycle (unhook → reinstall non-suppress → unhook again)
+        # Uninstalling a suppressing hook via kb.unhook() releases OS-level
+        # suppression immediately, so no separate "switch to non-suppress" step needed.
+        self._suppress = False
+        self._uninstall_hook()
 
     def set_suppress(self, suppress: bool) -> None:
         if self._suppress == suppress:
             return
         self._suppress = suppress
-        if self._listener:
-            self._restart_listener()
+        if self._hook is not None:
+            self._uninstall_hook()
+            self._install_hook()
 
-    def _restart_listener(self) -> None:
-        import time
-        old_listener = None
-        if self._listener:
-            old_listener = self._listener
-            old_listener.stop()
-            # Cannot join from within the listener thread itself (e.g. called
-            # from a key callback during set_suppress). Skip join in that case;
-            # the thread is already unwinding after the callback returns.
-            if threading.current_thread() is not old_listener:
-                old_listener.join(timeout=2.0)
-            self._listener = None  # Explicitly clear old reference
+    def _install_hook(self) -> None:
+        # keyboard.hook() returns the callback itself; store it for unhook.
+        self._hook = kb.hook(self._handle_event, suppress=self._suppress)
 
-        # Windows keyboard hook unhooking is asynchronous. We need to wait for the
-        # OS to fully release the hook before creating a new listener. Empirically,
-        # this requires ~1 second. Rather than a fixed sleep, we wait for the old
-        # listener thread to actually terminate.
-        if old_listener and hasattr(old_listener, '_thread') and old_listener._thread:
-            for _ in range(100):  # up to 5 seconds with 0.05s polls
-                if not old_listener._thread.is_alive():
-                    break
-                time.sleep(0.05)
-            else:
-                # Fallback: still apply the known-good delay
-                time.sleep(0.5)
-
-        self._listener = keyboard.Listener(
-            on_press=self._handle_press,
-            on_release=self._handle_release,
-            suppress=self._suppress,
-        )
-        self._listener.start()
+    def _uninstall_hook(self) -> None:
+        if self._hook is not None:
+            kb.unhook(self._hook)
+            self._hook = None
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _resolve(self, key) -> tuple[int, int]:
-        """Return (modifier_delta, keycode) for a given pynput key."""
-        if isinstance(key, keyboard.Key):
-            return special_key_to_hid(key)
-        if isinstance(key, keyboard.KeyCode):
-            if key.vk == 0x15:  # VK_HANGUL (한/영) -> Ctrl+Space
-                return (0x01, 0x2C)
-            if key.char:
-                return char_to_hid(key.char)
-            # Fallback: try vk-based mapping (Windows virtual key codes)
-            vk = key.vk
-            if vk is not None:
-                hid = _vk_to_hid(vk)
-                return (0, hid)
+    def _resolve(self, event: kb.KeyboardEvent) -> tuple[int, int]:
+        """Return (modifier_delta, keycode) for a keyboard event."""
+        # VK_HANGUL (한/영) -> Ctrl+Space for iOS IME compatibility
+        if event.vk == 0x15:
+            return (0x01, 0x2C)
+
+        name = (event.name or '').lower()
+
+        # Modifier keys
+        mod = _MODIFIER_NAME_MAP.get(name, 0)
+        if mod:
+            return (mod, 0)
+
+        # Named special keys
+        hid = _NAME_TO_HID.get(name)
+        if hid is not None:
+            return (0, hid)
+
+        # Single printable character (a-z, 0-9, punctuation)
+        if len(name) == 1:
+            result = char_to_hid(name)
+            if result != (0, 0):
+                return result
+
+        # VK-based fallback for any remaining unmapped keys
+        if event.vk is not None:
+            hid = _vk_to_hid(event.vk)
+            return (0, hid)
+
         return (0, 0)
 
-    def _handle_press(self, key) -> None:
-        mod_delta, keycode = self._resolve(key)
-        with self._lock:
-            self._active_modifiers |= mod_delta
-            current_mod = self._active_modifiers
-        if self._on_press and (keycode or mod_delta):
-            self._on_press(current_mod, keycode)
+    def _handle_event(self, event: kb.KeyboardEvent) -> None:
+        mod_delta, keycode = self._resolve(event)
 
-    def _handle_release(self, key) -> None:
-        mod_delta, keycode = self._resolve(key)
-        with self._lock:
-            self._active_modifiers &= ~mod_delta
-            current_mod = self._active_modifiers
-        if self._on_release and (keycode or mod_delta):
-            self._on_release(current_mod, keycode)
+        if event.event_type == kb.KEY_DOWN:
+            with self._lock:
+                self._active_modifiers |= mod_delta
+                current_mod = self._active_modifiers
+            if self._on_press and (keycode or mod_delta):
+                self._on_press(current_mod, keycode)
+        elif event.event_type == kb.KEY_UP:
+            with self._lock:
+                self._active_modifiers &= ~mod_delta
+                current_mod = self._active_modifiers
+            if self._on_release and (keycode or mod_delta):
+                self._on_release(current_mod, keycode)
 
 
 # ---------------------------------------------------------------------------
 # Windows Virtual Key -> HID Usage ID (keyboard page 0x07)
-# Covers common keys not representable as characters.
+# Fallback for keys not resolved by name lookup above.
 # ---------------------------------------------------------------------------
 _VK_HID: dict[int, int] = {
     0x08: 0x2A,  # VK_BACK -> Backspace
@@ -160,8 +214,7 @@ _VK_HID: dict[int, int] = {
     0x90: 0x53,  # VK_NUMLOCK
     0x91: 0x47,  # VK_SCROLL
     0x14: 0x39,  # VK_CAPITAL (Caps Lock)
-    0x15: 0x90,  # VK_HANGUL -> HID Lang1 (한/영)
-    0x19: 0x91,  # VK_HANJA  -> HID Lang2 (한자)
+    0x19: 0x91,  # VK_HANJA -> HID Lang2 (한자)
 }
 
 
